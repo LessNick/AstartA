@@ -10,8 +10,6 @@
 // SIO — основной блок прёма/передачи данных с ATARI
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 SIO::SIO() {
-//  m_dl = dl;
-
   // Инициализация контрольной сумма буфера
   m_cmdBufferCrc = 0;
 
@@ -48,6 +46,10 @@ void SIO::init(char* mountFileName) {
     } else {
       m_virtualDrive.mountImage(mountFileName, mountFileType);
     }
+  } else {
+#ifdef DEBUG
+    LOG.println("Empty init");
+#endif
   }
 }
 
@@ -371,40 +373,46 @@ void SIO::sendSDriveNext20() {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevStatus() {
-  // Данные получены
-  delay(DELAY_ACK);
-  ATARI_SIO.write(SEND_ACK);
- 
-  // Приём завершён
-  delay(DELAY_COMPLETE);
-  ATARI_SIO.write(SEND_COMPLETE);
 
-  StatusFrame* m_statusFrame = m_virtualDrive.getStatusFrame();
-  byte frameLength = sizeof(m_statusFrame);
-
+  byte mt = m_virtualDrive.getMountedImgType();
+  // Если тип примонтированного образа не ATR и не XEX, то молчать и не выдавать своё присутствие
+  if (mt == IMG_TYPE_ATR || mt == IMG_TYPE_XEX) {
+    
+    // Данные получены
+    delay(DELAY_ACK);
+    ATARI_SIO.write(SEND_ACK);
+   
+    // Приём завершён
+    delay(DELAY_COMPLETE);
+    ATARI_SIO.write(SEND_COMPLETE);
+  
+    StatusFrame* m_statusFrame = m_virtualDrive.getStatusFrame();
+    byte frameLength = sizeof(m_statusFrame);
+  
 #ifdef DEBUG
-  String sendResult = "";
+    String sendResult = "";
 #endif
- 
-  byte* b = (byte*)m_statusFrame;
-  for (int i=0; i < frameLength; i++) {
-
+   
+    byte* b = (byte*)m_statusFrame;
+    for (int i=0; i < frameLength; i++) {
+  
 #ifdef DEBUG
-    sendResult += DebugMsg::getHexString(*b, i);
+      sendResult += DebugMsg::getHexString(*b, i);
 #endif       
-    ATARI_SIO.write(*b);
-    b++;
-  }
-
-  byte crc = calcCrc((byte*)m_statusFrame, frameLength);
-  ATARI_SIO.write(crc);
+      ATARI_SIO.write(*b);
+      b++;
+    }
   
+    byte crc = calcCrc((byte*)m_statusFrame, frameLength);
+    ATARI_SIO.write(crc);
+    
 #ifdef DEBUG
-  DebugMsg::logSendDev(sendResult, crc);
+    DebugMsg::logSendDev(sendResult, crc);
 #endif
-  
-  // !!! Обязательно !!!
-  ATARI_SIO.flush();
+    
+    // !!! Обязательно !!!
+    ATARI_SIO.flush();
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

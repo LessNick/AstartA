@@ -36,7 +36,7 @@ struct ControllerStatus {
   byte            recordNotFound          : 1;        // bit 4 Запись не найдена (ошибка сектора)
   byte            deletedSector           : 1;        // bit 5 Удалённый сектор (сектор отмечен как удаленный в заголовке сектора)
   byte            writeProtectError       : 1;        // bit 6 Ошибка защита от записи
-  byte            unused_7                : 1;        // bit 7 Не задействован
+  byte            notReady                : 1;        // bit 7 Нет диска в приводе
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -96,6 +96,8 @@ public:
   void            refresh();                          // Для обновление индикации
   void            mountImage(char* imageName, byte imageType); // Подключить образ дискеты, типа
   void            mountXex(char* fileName);           // Подключить исполняемый файл как образ
+
+  byte            getMountedImgType();                // Получить тип примонтированного диска
   
   unsigned short  getSectorSize();                    // Получить размер сектора
   StatusFrame*    getStatusFrame();                   // Получить указатель на блок данных статуса устройства

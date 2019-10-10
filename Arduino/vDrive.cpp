@@ -21,8 +21,8 @@ void vDrive::init() {
   // Инициализация индикатора
   dl.init();
 
-  // Мотор вкл
-  m_statusFrame.drvStatus.motorRunning = 1;
+  // Мотор выкл
+  m_statusFrame.drvStatus.motorRunning = 0;
   
   // Инвертированные значения
   m_statusFrame.ctrlStatus.busy = 1;
@@ -32,7 +32,8 @@ void vDrive::init() {
   m_statusFrame.ctrlStatus.recordNotFound = 1;
   m_statusFrame.ctrlStatus.deletedSector = 1;
   m_statusFrame.ctrlStatus.writeProtectError = 1;
-  m_statusFrame.ctrlStatus.unused_7 = 1;
+  // Диска нет в приводе(инвертированное значение)
+  m_statusFrame.ctrlStatus.notReady = 0;
   
   // Установить таймаут ожидания
   m_statusFrame.defaultTimeout = 0xE0;
@@ -70,6 +71,8 @@ void vDrive::init() {
   m_disk[0].loadSize = 0;  
   
   m_diskPtr = m_disk;
+
+  m_imageType = IMG_TYPE_NONE;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -79,13 +82,19 @@ void vDrive::refresh() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+byte vDrive::getMountedImgType() {
+  return m_imageType;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void vDrive::mountXex(char* fileName) {
   init();
+  // Мотор вкл
+  m_statusFrame.drvStatus.motorRunning = 1;
+  // Диск в приводе (инвертированное значение)
+  m_statusFrame.ctrlStatus.notReady = 1;
+  
   m_imageType = IMG_TYPE_XEX;
-//  m_secPerTrack = 0;
-//  m_diskSideCount = 1;
-//  m_currentTrackPos = 0;
-//  m_currentSectorPos = 0;
   
 #ifdef DEBUG  
     DebugMsg::tryOpen("XEX", fileName);
@@ -216,11 +225,12 @@ void vDrive::mountImage(char* imageName, byte imageType) {
 
   init();
   
+  // Мотор вкл
+  m_statusFrame.drvStatus.motorRunning = 1;
+  // Диск в приводе (инвертированное значение)
+  m_statusFrame.ctrlStatus.notReady = 1;
+  
   m_imageType = imageType;
-//  m_secPerTrack = 0;
-//  m_diskSideCount = 1;
-//  m_currentTrackPos = 0;
-//  m_currentSectorPos = 0;
     
 #ifdef DEBUG  
     DebugMsg::tryOpen("Image", imageName);
@@ -327,7 +337,6 @@ void vDrive::mountImage(char* imageName, byte imageType) {
     LOG.print("Disk has side: ");
     LOG.println(m_diskSideCount);
 
-
     LOG.println("");
 #endif    
   }
@@ -368,9 +377,8 @@ byte* vDrive::getSectorData(int sectorPos) {
   } else {
     imageFile.seekSet(sPos + 16);     //16 skip header
     imageFile.read(sector, sSec);
-  }
-  
-    return sectorPtr;
+  }  
+  return sectorPtr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
