@@ -15,36 +15,55 @@ SIO::SIO() {
 
   // Инициализация времени последнего попринятого байта
   m_timeReceivedByte = 0;
+
+  //Инициализация vDrive
+  m_vDrive1.init();
+  m_vDrive2.init();
+  m_vDrive3.init();
+  m_vDrive4.init();
+
+  //Инициализация vRecorder
+  m_virtualRec.init();
+
+  // Инициализация сектора
+  m_dataBuffer[0] = 0;
+  m_dataBufferPtr = m_dataBuffer;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void SIO::init(char* mountFileName) {
+void SIO::init(int drvId, char* mountFileName) {
 
+  byte mountDriveId = 0x30 + drvId;
+  
+  // Инициализация vRecorder
+  // Иначе колбасит кнопку «Play»
+  m_virtualRec.init();
+  
   // Установить пин Atari Cmd на вход (приём данных)
   pinMode(ATARI_CMD_PIN, INPUT);
 
   // initialize digital pin as an output
   pinMode(LED_BUILTIN, OUTPUT);
 
-  //Инициализация vDrive
-  m_virtualDrive.init();
-
-  //Инициализация vRecorder
-  m_virtualRec.init();
-
   // Начальная инициализация SIO
   changeState(SIO_READY);
+
+  vDrive* workDrive = getVDriveById(mountDriveId);
 
   if (mountFileName != "") {
     byte mountFileType = getFileType(mountFileName);
     if (mountFileType == IMG_TYPE_XEX) {
-      m_virtualDrive.mountXex(mountFileName);
-    
+        workDrive->init();
+        workDrive->mountXex(mountFileName);
+        
     } else if (mountFileType == IMG_TYPE_CAS) {
+      //Инициализация vRecorder
+      m_virtualRec.init();
       m_virtualRec.mountImage(mountFileName);
       
     } else {
-      m_virtualDrive.mountImage(mountFileName, mountFileType);
+        workDrive->init();
+        workDrive->mountImage(mountFileName, mountFileType);
     }
   } else {
 #ifdef DEBUG
@@ -52,6 +71,23 @@ void SIO::init(char* mountFileName) {
 #endif
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+vDrive* SIO::getVDriveById(byte drvId) {
+  switch (drvId) {
+    case DEV_D2:
+      return &m_vDrive2;
+
+    case DEV_D3:
+      return &m_vDrive3;
+
+    case DEV_D4:
+      return &m_vDrive4;
+
+  }
+  return &m_vDrive1;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 byte SIO::getFileType(char* fileName) {
@@ -75,10 +111,32 @@ byte SIO::getFileType(char* fileName) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void SIO::update() {
+void SIO::updateIndicator() {
     //Для обновления индикации
-    m_virtualDrive.refresh();
+    switch(m_cmdBuffer.devId) {
+      case DEV_D2:
+        m_vDrive2.refresh();
+        break;
+      
+      case DEV_D3:
+        m_vDrive3.refresh();
+        break;
+      
+      case DEV_D4:
+        m_vDrive4.refresh();
+        break;
+      
+      default:
+        m_vDrive1.refresh();
+        break;
+    }
+}
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::update() {
+  
+    updateIndicator();
+    
     // Для опроса клавиш
     m_virtualRec.keysCheck();
     
@@ -97,7 +155,12 @@ void SIO::update() {
       // Чтение SIO команды
       case SIO_READ_CMD:
         checkReadCmdComplete();
-        break;    
+        break;
+
+      // Чтение SIO данных
+      case SIO_READ_DATA:
+        checkReadDataComplete();
+        break;
     }
 }
 
@@ -135,6 +198,62 @@ void SIO::clearCmdBuffer() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::checkReadDataComplete() { 
+  if (m_dataBufferPtr - (byte*)&m_dataBuffer == m_currentSectorSize+1) {   
+    // Данные получены
+    delay(DELAY_ACK);
+    ATARI_SIO.write(SEND_ACK);
+   
+    // Расчёт CRC нового пакета
+    calcDataCrc();
+
+    byte receivedCrc = m_dataBuffer[m_currentSectorSize];
+
+#ifdef DEBUG
+    DebugMsg::logReceivedData(m_dataBuffer, m_currentSectorSize, m_dataBufferCrc, receivedCrc);
+#endif
+    if (m_dataBufferCrc == receivedCrc) {
+        // Приём завершён
+        delay(DELAY_COMPLETE);
+        ATARI_SIO.write(SEND_COMPLETE);
+
+        if (m_cmdBuffer.devId >= DEV_D1 && m_cmdBuffer.devId <= DEV_DO) {
+            //TODO: SAVE
+            vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+
+            // Первые 3 сектора не зависимо от размеров всего 128б это бут область!
+            m_currentSectorSize = 128;
+            if (m_currentSector > 3) {
+              m_currentSectorSize = workDrive->getSectorSize();
+            }
+            
+            //workDrive->setSectorData(m_currentSector, (byte*)&m_dataBuffer);
+            workDrive->setSectorData(m_currentSector, m_dataBuffer);
+        
+        } else if (m_cmdBuffer.devId == DEV_SDRIVE) {
+            //TODO: SAVE
+        }
+        
+        
+        // !!! Обязательно !!!
+        ATARI_SIO.flush();
+    
+        changeState(SIO_WAIT_CMD_START);
+    
+    } else {
+      // Если ошибка контрольной суммы, то повторить запрос
+      ATARI_SIO.write(SEND_NAK);
+      changeState(SIO_READY);
+    }
+    
+  // Иначе по истечению таймаута сбросить данные и ждать команду
+  } else if (millis() - m_timeReceivedByte > READ_CMD_TIMEOUT) {
+    clearCmdBuffer();
+    changeState(SIO_READY);
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::checkReadCmdComplete() { 
   // Если прилетели все 5 байт, пакет данных команды завершен
   if (m_cmdBufferPtr - (byte*)&m_cmdBuffer == 5) {    
@@ -146,13 +265,16 @@ void SIO::checkReadCmdComplete() {
 #endif
 
     if (m_cmdBufferCrc == m_cmdBuffer.crc) {
+      
+      changeState(SIO_WAIT_CMD_START);
+      
       if (m_cmdBuffer.devId >= DEV_D1 && m_cmdBuffer.devId <= DEV_DO) {
         fCmdProcessing();
               
       } else if (m_cmdBuffer.devId == DEV_SDRIVE) {
         sCmdProcessing();
       }
-      changeState(SIO_WAIT_CMD_START);
+      
     } else {
       // Если ошибка контрольной суммы, то повторить запрос
       ATARI_SIO.write(SEND_NAK);
@@ -175,7 +297,17 @@ void SIO::incomingByte() {
   if (m_sioState == SIO_READ_CMD) {
     *m_cmdBufferPtr = b;
       m_cmdBufferPtr++;
+  
+  } else if (m_sioState == SIO_READ_DATA) {
+    *m_dataBufferPtr = b;
+    m_dataBufferPtr++;
   }
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::calcDataCrc() {
+  m_dataBufferCrc = calcCrc((byte*)&m_dataBuffer, m_currentSectorSize);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -207,7 +339,7 @@ void SIO::fCmdProcessing() {
       break;
           
     case FCMD_PUT:
-      //TODO: 
+      recieveDevSector();
       break;
       
     case FCMD_STATUS:
@@ -374,7 +506,16 @@ void SIO::sendSDriveNext20() {
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void SIO::sendDevStatus() {
 
-  byte mt = m_virtualDrive.getMountedImgType();
+  vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+
+//  byte mt = m_vDrive1.getMountedImgType();
+  byte mt = workDrive->getMountedImgType();
+#ifdef DEBUG
+    LOG.print("Dev ID: ");
+    LOG.println(m_cmdBuffer.devId, HEX);
+    LOG.print("Mount type: ");
+    LOG.println(mt, HEX);
+#endif
   // Если тип примонтированного образа не ATR и не XEX, то молчать и не выдавать своё присутствие
   if (mt == IMG_TYPE_ATR || mt == IMG_TYPE_XEX) {
     
@@ -385,8 +526,8 @@ void SIO::sendDevStatus() {
     // Приём завершён
     delay(DELAY_COMPLETE);
     ATARI_SIO.write(SEND_COMPLETE);
-  
-    StatusFrame* m_statusFrame = m_virtualDrive.getStatusFrame();
+
+    StatusFrame* m_statusFrame = workDrive->getStatusFrame();
     byte frameLength = sizeof(m_statusFrame);
   
 #ifdef DEBUG
@@ -421,16 +562,32 @@ void SIO::sendDevSector() {
   delay(DELAY_ACK);
   ATARI_SIO.write(SEND_ACK);
 
-  unsigned short m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
-   
-  // Первые 3 сектора не зависимо от размеров всего 128б это бут область!
-  unsigned short sectorSize = 128;
-  if (m_currentSector > 3) {
-    sectorSize = m_virtualDrive.getSectorSize();
-  }
+  m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
+
+  vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
   
-  byte* sectorData = m_virtualDrive.getSectorData(m_currentSector);
-  sendBytes(sectorSize, sectorData);
+  // Первые 3 сектора не зависимо от размеров всего 128б это бут область!
+  m_currentSectorSize = 128;
+  if (m_currentSector > 3) {
+    m_currentSectorSize = workDrive->getSectorSize();
+  }
+
+  byte* sectorData = workDrive->getSectorData(m_currentSector);
+  sendBytes(m_currentSectorSize, sectorData);
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void SIO::recieveDevSector() {
+  // Данные получены
+  delay(DELAY_ACK);
+  ATARI_SIO.write(SEND_ACK);
+
+  m_currentSector = m_cmdBuffer.aByte2*256 + m_cmdBuffer.aByte1;
+
+  changeState(SIO_READ_DATA);
+
+  memset(m_dataBuffer, 0, sizeof(m_dataBuffer));
+  m_dataBufferPtr = m_dataBuffer;
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -456,7 +613,7 @@ void SIO::sendBytes(unsigned short sectorSize, byte* sectorData) {
     b++;
 
     // Обновление индикации
-    m_virtualDrive.refresh();
+    updateIndicator();
   }
 
   byte crc = calcCrc(sectorData, sectorSize);
@@ -483,9 +640,11 @@ void SIO::sendDevChunkInfo() {
 
   LOG.print("Get chunk info for:" );
   LOG.println(m_currentChunk);
+
+  vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
   
-  Diskette d = m_virtualDrive.getRecordInfo(m_currentChunk);
-  unsigned int recCount = m_virtualDrive.getDiskRecCount();  // Количество чанков всего
+  Diskette d = workDrive->getRecordInfo(m_currentChunk);
+  unsigned int recCount = workDrive->getDiskRecCount();  // Количество чанков всего
   
   byte chunkInfo[6];
   chunkInfo[0] = d.loadAddr % 256;                       // +0x00: 2 байта: Адрес загрузки чанка
@@ -543,9 +702,10 @@ void SIO::sendDevChunkData() {
   LOG.println(m_currentChunk);
 #endif
 
-  Diskette d = m_virtualDrive.getRecordInfo(m_currentChunk);
+  vDrive* workDrive = getVDriveById(m_cmdBuffer.devId);
+  Diskette d = workDrive->getRecordInfo(m_currentChunk);
 
-  byte* chunkData = m_virtualDrive.getRecordData(m_currentChunk);
+  byte* chunkData = workDrive->getRecordData(m_currentChunk);
   sendBytes(d.loadSize, chunkData);
 
 }

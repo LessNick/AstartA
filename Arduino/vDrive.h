@@ -103,6 +103,8 @@ public:
   StatusFrame*    getStatusFrame();                   // Получить указатель на блок данных статуса устройства
   byte*           getSectorData(int sectorPos);       // Получить указатель на блок данных сектора
 
+  void            setSectorData(unsigned short sectorPos, byte* sectorData);    // Сохранить данные сектора
+
   byte            getCurrentTrack();                  // Получить текущий трек (условно)
 
   Diskette        getRecordInfo(unsigned int recId);  // Получить данные о записи (сектор/чанк)

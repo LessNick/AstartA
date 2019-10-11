@@ -240,7 +240,8 @@ void vDrive::mountImage(char* imageName, byte imageType) {
     imageFile.close();
   }
   
-  imageFile.open(imageName, O_RDONLY);
+  //imageFile.open(imageName, O_RDONLY);
+  imageFile.open(imageName, O_RDWR);
 
   if (!imageFile.isOpen()) {
 
@@ -379,6 +380,50 @@ byte* vDrive::getSectorData(int sectorPos) {
     imageFile.read(sector, sSec);
   }  
   return sectorPtr;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void vDrive::setSectorData(unsigned short sectorPos, byte* sectorData) {
+  // Текущий сектор
+  m_currentSectorPos = sectorPos;
+  // Текущий трек (псевдо расчёт)
+  m_currentTrackPos = m_currentSectorPos/m_secPerTrack;
+
+  // Первые 3 сектора не зависимо от размеров всего 128б это бут область!
+  unsigned short sSec = 128;
+  if (sectorPos > 3) {
+    sSec = m_sectorSize;
+  }
+  int sPos = sSec * (sectorPos - 1);
+  
+  // Если размер сектора > 128
+  if (m_sectorSize > 128 && sectorPos > 3) {
+    sPos = sSec * (sectorPos - 1 - 3) + 128 *3;
+  }
+  if (m_imageType == IMG_TYPE_XEX) {
+#ifdef DEBUG
+    LOG.println("ERROR: XEX FILE READ ONLY!");
+#endif 
+  } else {
+
+#ifdef DEBUG
+    LOG.print("Write sector size ");
+    LOG.print(sSec);
+    LOG.print(" to image at ");
+    LOG.println(sPos + 16);
+
+    byte* b = sectorData;
+    for (int i=0; i < sSec; i++) {
+      LOG.print(*b, HEX);
+      LOG.print(" ");
+      b++;
+    }
+    LOG.println(" ");
+#endif 
+    imageFile.seekSet(sPos + 16);     //16 skip header
+    imageFile.write(sectorData, sSec);
+  }  
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

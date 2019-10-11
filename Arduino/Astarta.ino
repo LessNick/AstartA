@@ -1,11 +1,11 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// AstartA Project v0.01 very alpha
+// AstartA Project v0.02 alpha
 // Copyright 2019 © LessNick aka breeze/fishbonce crew
 // https://github.com/LessNick/AstartA
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Required: Arduino DUE + Ethernet Shield
-// Supported: ATR, XEX, CAS (read only)
+// Supported: ATR (Read/Write), XEX & CAS (read only)
 //
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -29,8 +29,10 @@ String rootPath;
 SIO atariSio;
 
 String inputCmd = "";
-String inputArg = "";
-bool cmdComplete = false;
+String inputArg1 = "";
+String inputArg2 = "";
+bool iCmdComplete = false;
+bool iDrvComplete = false;
 bool inputComplete = false;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -42,7 +44,7 @@ void setup() {
 #ifdef DEBUG
   // Установка скорости порта консоли для отладки
   LOG.begin(115200);
-  LOG.println("Astarta v.001 very alpha");
+  LOG.println("Astarta v0.02 alpha");
   LOG.println("-------------------------------");
 #endif
 
@@ -68,9 +70,9 @@ void setup() {
   LOG.println("Setup Complete!");
 #endif
 
-  // Инициализация SIO + имя образа для загрузки
-  atariSio.init("");
-//  atariSio.init("autorun.atr");
+  // Инициализация SIO: номер дисковода + имя образа для загрузки
+  atariSio.init(1, "");
+//  atariSio.init(1, "autorun.atr");
 
     rootPath = "/";
 }
@@ -82,17 +84,19 @@ void loop() {
 
   if (inputComplete) {
     if (inputCmd == "cd") {
-      cmdCd(inputArg);
+      cmdCd(inputArg1);
     } else if (inputCmd == "dir") {
       cmdDir();
     } else if (inputCmd == "mount") {
-      cmdMount(inputArg);
+      cmdMount(inputArg1, inputArg2);
     }
       
     inputCmd = "";
-    inputArg = "";
+    inputArg1 = "";
+    inputArg2 = "";
     inputComplete = false;
-    cmdComplete = false;
+    iCmdComplete = false;
+    iDrvComplete = false;
   }
 }
 
@@ -107,50 +111,80 @@ void ATARI_SIO_EVENT() {
 void serialEvent() {
   while (Serial.available()) {
     char inChar = (char)Serial.read();
-    if (!cmdComplete && inChar == ' ') {
-      cmdComplete = true;
-    
+    if (!iCmdComplete && inChar == ' ') {
+      iCmdComplete = true;
+      
+    } else if (!iDrvComplete && inChar == ' ') {
+      iDrvComplete = true;
+      
     } else if (inChar == '\n') {
       inputComplete = true;
     
     } else {
-      if (cmdComplete) {
-        inputArg += inChar;
-      } else {
+      if (!iCmdComplete) {
         inputCmd += inChar;
+      } else if (!iDrvComplete) {
+        inputArg1 += inChar;
+      } else {
+        inputArg2 += inChar;
       }
     }    
   }
 }
 
 void cmdCd(String dirName) {
+  LOG.println("============================================");
   LOG.print("[cd] - ");  
   LOG.println(dirName);
-
+  LOG.println("============================================");
+  
   String newRootPath = rootPath + "/" + dirName;
   if (dirName == "/") {
     newRootPath = "/";
-  }else if (rootPath == "/") {
+    
+  } else if (dirName == "..") {
+    if (rootPath.length() > 0) {
+      for (int i=rootPath.length(); i>=0; i--) {
+        if (rootPath.charAt(i) == '/' || rootPath.charAt(i) == '\\') {
+          if (i == 0) {
+            newRootPath = "/";
+          } else {
+            newRootPath = rootPath.substring(0,i);
+          }
+          break;
+        }
+      }
+    } else {
+      newRootPath = "/";
+    }
+    
+  } else if (rootPath == "/") {
     newRootPath = "/" + dirName;
   }
   char buf[255];
   newRootPath.toCharArray(buf, 255);
+
+    LOG.print("Try change dir to \"");
+    LOG.print(newRootPath);
+    LOG.print("\" - ");
   
   if (dirFile.open(buf, O_RDONLY)) {
     rootPath = newRootPath;
-    LOG.print("dir changed to \"");
-    LOG.print(rootPath);
-    LOG.println("\"");
-    
+
+    LOG.println("OK");
+        
     dirFile.close();
   } else {
-    LOG.println("change dir failed");
+    LOG.println("FAILED");
   }
 }
 
 void cmdDir() {
+  LOG.println("============================================");
   LOG.print("[dir] - ");
   LOG.println(rootPath);
+  LOG.println("============================================");
+  
   char buf[255];
   rootPath.toCharArray(buf, 255);
   
@@ -173,15 +207,22 @@ void cmdDir() {
   }
 }
 
-void cmdMount(String mountFileName) {
-  LOG.print("[mount] - ");
-  LOG.println(rootPath);
+void cmdMount(String mountDrvId, String mountFileName) {
+  LOG.println("============================================");
+  LOG.print("[mount] - Drive: ");
+  LOG.print(mountDrvId);
+  LOG.print(" - ");  
+  
   if (rootPath == "/") {
     mountFileName = "/" + mountFileName;
   } else {
     mountFileName = rootPath + "/" + mountFileName;
   }
+
+  LOG.println(mountFileName);
+  LOG.println("============================================");
+  
   char buf[255];
   mountFileName.toCharArray(buf, 255);
-  atariSio.init(buf);
+  atariSio.init(mountDrvId.toInt(), buf);
 }

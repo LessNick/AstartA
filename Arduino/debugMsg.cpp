@@ -7,9 +7,11 @@
 // Debug Message — отладочная информация
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 DebugMsg::DebugMsg() {
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::logSioState(byte id) {
   char *sioStateMsg[] = {
     "Ready",
@@ -23,6 +25,32 @@ void DebugMsg::logSioState(byte id) {
   LOG.println(sioStateMsg[id]);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+void DebugMsg::logReceivedData(byte* data, unsigned short dSize, byte crc, byte calcCrc) {
+  LOG.println("--------------------------------------");
+  LOG.println(">Received data:");
+  byte* b = data;
+  for (unsigned short i = 0; i<dSize; i++) {
+    LOG.print(DebugMsg::getHexString(*b, i));
+    b++;
+  }
+
+  LOG.println("");
+  LOG.print("CRC: Calculated: $");
+  LOG.print(calcCrc, HEX);
+  LOG.print(",  Received: $");
+  LOG.print(crc, HEX);
+  LOG.print(",  Status:");
+  if (calcCrc == crc) {
+    LOG.println("OK");
+  } else {
+    LOG.println("ERROR");
+  }
+  
+  LOG.println("");
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::logReceivedCmdData(CommandFrame cf, byte crc) {
   LOG.println("--------------------------------------");
   LOG.println(">Received data:");
@@ -66,6 +94,12 @@ void DebugMsg::logReceivedCmdData(CommandFrame cf, byte crc) {
         LOG.print("[S] Requested data for sector: ");
         LOG.println(cf.aByte2*256 + cf.aByte1);
         break;
+      
+      case FCMD_PUT:
+        LOG.println(" ");      
+        LOG.print("[S] Receive data for sector: ");
+        LOG.println(cf.aByte2*256 + cf.aByte1);
+        break;
         
       case FCMD_CHUNK_INFO:
         LOG.println(" ");
@@ -86,6 +120,7 @@ void DebugMsg::logReceivedCmdData(CommandFrame cf, byte crc) {
   LOG.println("");
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::logSendDev(String sendResult, byte crc) {
   LOG.println("<Send data:");
   LOG.println(sendResult);
@@ -95,7 +130,7 @@ void DebugMsg::logSendDev(String sendResult, byte crc) {
   LOG.println("");
 }
 
-//---------------------------------------------------------------------
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 String DebugMsg::getHexString(byte b, unsigned int i) {
   String result = "";
   if (i>0) {
@@ -111,6 +146,7 @@ String DebugMsg::getHexString(byte b, unsigned int i) {
     return result;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 String DebugMsg::getHexZeroLeading(byte b) {
   String result = "";
   if (b < 16) { result += "0"; };
@@ -118,7 +154,7 @@ String DebugMsg::getHexZeroLeading(byte b) {
   return result;
 }
 
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 char* DebugMsg::getDevName(unsigned int id) {
   char *dis = "Unknown";
   for(int i = 0; i < sizeof(devNames)/sizeof(HashStruct); ++i) {   
@@ -130,6 +166,7 @@ char* DebugMsg::getDevName(unsigned int id) {
   return dis;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 char* DebugMsg::getCmdName(unsigned int id, unsigned int devId) {
   if (devId == DEV_SDRIVE) {
     return getSCmdName(id);
@@ -137,6 +174,7 @@ char* DebugMsg::getCmdName(unsigned int id, unsigned int devId) {
   return getFCmdName(id);
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 char* DebugMsg::getFCmdName(unsigned int id) {
   char *dis = "Unknown";
   for(int i = 0; i < sizeof(floppyCommands)/sizeof(HashStruct); ++i) {   
@@ -148,6 +186,7 @@ char* DebugMsg::getFCmdName(unsigned int id) {
   return dis;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 char* DebugMsg::getSCmdName(unsigned int id) {
   char *dis = "Unknown";
   for(int i = 0; i < sizeof(sDriveCommands)/sizeof(HashStruct); ++i) {   
@@ -159,6 +198,7 @@ char* DebugMsg::getSCmdName(unsigned int id) {
   return dis;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::dumpAllRecords(Diskette* dp, unsigned int recCount) {
     for (unsigned int i=0; i < recCount; i++) {      
       LOG.print("Record:");
@@ -169,6 +209,7 @@ void DebugMsg::dumpAllRecords(Diskette* dp, unsigned int recCount) {
   }
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::dumpRecord(Diskette* d) {
 
   LOG.print(" | Side: ");
@@ -196,6 +237,7 @@ void DebugMsg::dumpRecord(Diskette* d) {
   LOG.println(')');
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::xexInfo(unsigned short runAddr, unsigned short initAddr) {
   LOG.println(' ');
   LOG.print("Run Addr: $");
@@ -205,7 +247,7 @@ void DebugMsg::xexInfo(unsigned short runAddr, unsigned short initAddr) {
   LOG.println(' ');
 }
 
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::tryOpen(char* fileType, char* fileName) {
   LOG.print("Try to Open ");
   LOG.print(fileType);
@@ -214,6 +256,7 @@ void DebugMsg::tryOpen(char* fileType, char* fileName) {
   LOG.print("\" - ");
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void DebugMsg::logBlockInfo(unsigned short blockSize, unsigned int nAddr, unsigned short startAddr, unsigned short endAddr) {
   LOG.print("Block size: $");
   LOG.print(blockSize, HEX);
@@ -239,3 +282,4 @@ void DebugMsg::logBlockInfo(unsigned short blockSize, unsigned int nAddr, unsign
   LOG.print(')');
   LOG.println(" - End Address"); 
 }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

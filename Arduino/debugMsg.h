@@ -105,6 +105,7 @@ public:
   DebugMsg();
   static void     logSioState(byte id);                           // Вывести в лог состояние статуса
   static void     logReceivedCmdData(CommandFrame cf, byte crc);  // Вывести в лог данные команды
+  static void     logReceivedData(byte* data, unsigned short dSize, byte crc, byte calcCrc); // Вывести в лог полученные данные
   static void     logSendDev(String sendResult, byte crc);        // Вывести в лог данные отправки
 
   static void     xexInfo(unsigned short runAddr, unsigned short initAddr); // Вывести в лог информацию о XEX

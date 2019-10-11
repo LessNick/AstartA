@@ -14,7 +14,7 @@
 const byte FCMD_FORMAT         = 0x21;                //
 const byte FCMD_FORMAT_MD      = 0x22;
 const byte FCMD_POLL           = 0x3F;
-const byte FCMD_PUT            = 0x50;
+const byte FCMD_PUT            = 0x50;                // Команда записать сектор
 const byte FCMD_READ           = 0x52;
 const byte FCMD_STATUS         = 0x53;                // Команда получить статус устройства
 const byte FCMD_WRITE          = 0x57;
@@ -29,6 +29,7 @@ const byte FCMD_CHUNK_INFO     = 0xff;                // Команда полу
 const byte SIO_READY          = 1;                    // Готовность к приёму комманды
 const byte SIO_WAIT_CMD_START = 2;                    // Ожидание начала команды
 const byte SIO_READ_CMD       = 3;                    // Чтение команды
+const byte SIO_READ_DATA      = 4;                    // Чтение данных
 
 const byte SEND_ACK           = 0x41;                 // Отправить код данные получены
 const byte SEND_NAK           = 0x4E;                 // Отправить код ошибка, повторить отправку
@@ -59,12 +60,16 @@ struct CommandFrame {
 class SIO {
 public:
   SIO();
-  void            init(char* mountFileName);          // Настройка параметров
+  void            init(int drvId, char* mountFileName);  // Настройка параметров
   void            update();                           // Обработка статуса
   void            incomingByte();                     // Байт входящих данных
   
 private:
-  vDrive          m_virtualDrive;                     // Виртуальный привод
+  vDrive          m_vDrive1;                          // Виртуальный привод D1
+  vDrive          m_vDrive2;                          // Виртуальный привод D2
+  vDrive          m_vDrive3;                          // Виртуальный привод D3
+  vDrive          m_vDrive4;                          // Виртуальный привод D4
+  
   vRecorder       m_virtualRec;                       // Виртуальный магнитофон
   
   DigitLed*       m_dl;                               // Цифровой индикатор
@@ -75,21 +80,35 @@ private:
 
   CommandFrame    m_cmdBuffer;                        // Буфер для приёма данных команды
   byte*           m_cmdBufferPtr;                     // Указатель на начала буфера
-  byte            m_cmdBufferCrc;                     // Контрольная сумма буфера
+  byte            m_cmdBufferCrc;                     // Контрольная сумма буфера команды
+
+  unsigned short  m_currentSector;                    // Текущий сектор (чтения/запись);
+  unsigned short  m_currentSectorSize;                // Размер текущего сектора
+
+  byte            m_dataBuffer[1024];                 // Буфер для получения данных cо стороны ATARI
+  byte            *m_dataBufferPtr;                   // Указатель на буфер для получения данных cо стороны ATARI
+  byte            m_dataBufferCrc;                    // Контрольная сумма буфера данных
 
   sDrive*         m_sDrive;                           // Эмуляция для прикидки SDrive
   
 //  BusPoll3        busPoll3;                           // Ответ для пулинга устройств
   
 //-------------------------------------------------------------------------------------------------------------------
+  vDrive*         getVDriveById(byte drvId);          // Получить указатель на текущий виртуальный привод про ID
+  void            updateIndicator();                  // Обновление идикации для последнего активного виртуального привода
+  
   void            checkCmdPinHigh();                  // Проверка состояния пина Command (HIGH)
   void            checkCmdPinLow();                   // Проверка состояния пина Command (LOW)
   void            clearCmdBuffer();                   // Подготовка буфера комманды к приёму данных
   void            checkReadCmdComplete();             // Проверка окончания приёма данных команды
+  void            checkReadDataComplete();            // Проверка окончания приёма данных
+
+  
   void            changeState(byte state);            // Изменить текущее состояние SIO
   void            logReceivedCmdData();               // Логирование данных пакета (для отладки)
 
   void            calcCmdDataCrc();                   // Расчёт контрольной суммы блока команды
+  void            calcDataCrc();                      // Расчёт контрольной суммы блока данных
   byte            calcCrc(byte* chunk, unsigned short len);    // Расчёт контрольной суммы блока данных
 
   void            fCmdProcessing();                   // Обработка поступившей команды для устройств типа дисковод
@@ -97,6 +116,7 @@ private:
   void            sendDevStatus();                    // Вернуть статус запрошенного устройства
 
   void            sendDevSector();                    // Отправить ATARI сектор данных для запрошенного устройства
+  void            recieveDevSector();                 // Подготовится к приёму сектора для записи
 
   void            sendDevChunkInfo();                 // Отправить ATARI информацию о чанке для запрошенного устройства
   void            sendDevChunkData();                 // Отправить ATARI данные чанка для запрошенного устройства

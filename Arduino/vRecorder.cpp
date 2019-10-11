@@ -125,7 +125,7 @@ void vRecorder::playBtnReleased() {
   } else {
     
 #ifdef DEBUG
-    Serial.println("[ERROR] Image not mounted!");
+    Serial.println("[ERROR] Cassette image not mounted!");
 #endif
 
   }
